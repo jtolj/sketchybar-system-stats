@@ -12,6 +12,7 @@ fs2 = "0.4.3"
 starship-battery = "0.10.3"
 sysinfo = { version = "0.38.1", default-features = false, features = ["component", "disk", "network", "system"] }
 tokio = { version = "1", features = ["full"] }
+libc = "0.2"
 
 [build-dependencies]
 cc = "1.2"

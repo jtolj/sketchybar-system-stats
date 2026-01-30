@@ -117,7 +117,13 @@ pub fn all_disk_flags() -> Vec<&'static str> {
 }
 
 pub fn all_ram_flags() -> Vec<&'static str> {
-    vec!["ram_available", "ram_total", "ram_usage", "ram_used"]
+    vec![
+        "ram_available",
+        "ram_total",
+        "ram_usage",
+        "ram_used",
+        "memory_pressure",
+    ]
 }
 
 pub fn all_swp_flags() -> Vec<&'static str> {

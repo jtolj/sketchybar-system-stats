@@ -516,6 +516,7 @@ dependencies = [
  "cc",
  "clap",
  "fs2",
+ "libc",
  "starship-battery",
  "sysinfo",
  "tokio",

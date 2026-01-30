@@ -1,8 +1,46 @@
 use crate::cli;
 use std::fmt::Write;
+use std::mem;
 use sysinfo::System;
 
 const BYTES_PER_GB: f32 = 1_073_741_824.0;
+
+// Memory pressure from from https://github.com/abosnjakovic/oversee/blob/main/src/memory.rs
+
+// FFI declaration for sysctlbyname
+unsafe extern "C" {
+    fn sysctlbyname(
+        name: *const libc::c_char,
+        oldp: *mut libc::c_void,
+        oldlenp: *mut libc::size_t,
+        newp: *mut libc::c_void,
+        newlen: libc::size_t,
+    ) -> libc::c_int;
+}
+
+/// Query macOS memory pressure level via sysctl
+/// Returns: Some(1) = Normal, Some(2) = Warning, Some(4) = Critical, None = Error
+fn get_macos_memory_pressure_level() -> Option<u32> {
+    let name = b"kern.memorystatus_vm_pressure_level\0";
+    let mut pressure_level: u32 = 0;
+    let mut length = mem::size_of::<u32>();
+
+    unsafe {
+        let result = sysctlbyname(
+            name.as_ptr() as *const i8,
+            &mut pressure_level as *mut _ as *mut libc::c_void,
+            &mut length,
+            std::ptr::null_mut(),
+            0,
+        );
+
+        if result == 0 {
+            Some(pressure_level)
+        } else {
+            None
+        }
+    }
+}
 
 pub fn get_memory_stats(s: &System, flags: &[&str], no_units: bool, buf: &mut String) {
     let ram_flag_present = flags
@@ -12,7 +50,7 @@ pub fn get_memory_stats(s: &System, flags: &[&str], no_units: bool, buf: &mut St
         .iter()
         .any(|&flag| cli::all_swp_flags().contains(&flag));
 
-    let (ram_total, ram_used, ram_usage_percentage) = if ram_flag_present {
+    let (ram_total, ram_used, ram_usage_percentage, memory_pressure) = if ram_flag_present {
         let ram_total = s.total_memory();
         let ram_used = s.used_memory();
         let ram_usage_percentage = if ram_total > 0 {
@@ -20,9 +58,16 @@ pub fn get_memory_stats(s: &System, flags: &[&str], no_units: bool, buf: &mut St
         } else {
             0
         };
-        (ram_total, ram_used, ram_usage_percentage)
+
+        let memory_pressure = if let Some(level) = get_macos_memory_pressure_level() {
+            level
+        } else {
+            0
+        };
+
+        (ram_total, ram_used, ram_usage_percentage, memory_pressure)
     } else {
-        (0, 0, 0)
+        (0, 0, 0, 0)
     };
     let (swp_total, swp_used, swp_usage_percentage) = if swp_flag_present {
         let swp_total = s.total_swap();
@@ -39,6 +84,9 @@ pub fn get_memory_stats(s: &System, flags: &[&str], no_units: bool, buf: &mut St
 
     for &flag in flags {
         match flag {
+            "memory_pressure" => {
+                let _ = write!(buf, "MEMORY_PRESSURE=\"{:1}\" ", memory_pressure);
+            }
             "ram_available" => {
                 let unit = if no_units { "" } else { "GB" };
                 let _ = write!(
@@ -110,11 +158,17 @@ mod tests {
         s.refresh_all();
         let mut buf = String::new();
 
-        get_memory_stats(&s, &["ram_total", "ram_usage"], false, &mut buf);
+        get_memory_stats(
+            &s,
+            &["ram_total", "ram_usage", "memory_pressure"],
+            false,
+            &mut buf,
+        );
 
         assert!(buf.contains("RAM_TOTAL="));
         assert!(buf.contains("RAM_USAGE="));
         assert!(buf.contains("GB") || buf.contains("%"));
+        assert!(buf.contains("MEMORY_PRESSURE="));
     }
 
     #[test]
